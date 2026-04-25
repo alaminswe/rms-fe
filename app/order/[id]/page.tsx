@@ -3,8 +3,7 @@
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { useParams } from "next/navigation";
-import { differenceInMinutes } from "date-fns";
-import { getLiveOrder, useOrderStore } from "@/lib/store/order-store";
+import { getLiveOrder, getStoredOrderById, useOrderStore } from "@/lib/store/order-store";
 import { formatCurrency } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -21,7 +20,6 @@ function getPaymentLabel(method: string) {
 export default function OrderConfirmationPage() {
   const params = useParams<{ id: string }>();
   const orders = useOrderStore((state) => state.orders);
-  const cancelOrder = useOrderStore((state) => state.cancelOrder);
   const [hydrated, setHydrated] = useState(false);
 
   useEffect(() => {
@@ -30,7 +28,7 @@ export default function OrderConfirmationPage() {
 
   const order = useMemo(() => {
     if (!hydrated) return null;
-    return getLiveOrder(orders.find((item) => item.id === params.id));
+    return getLiveOrder(getStoredOrderById(params.id) ?? orders.find((item) => item.id === params.id));
   }, [hydrated, orders, params.id]);
 
   if (hydrated && !order) {
@@ -58,9 +56,6 @@ export default function OrderConfirmationPage() {
       </main>
     );
   }
-
-  const cancelMinutesRemaining = 5 - differenceInMinutes(new Date(), new Date(order.createdAt));
-  const canCancel = cancelMinutesRemaining > 0 && order.status !== "CANCELLED" && order.status !== "SERVED";
 
   return (
     <main className="min-h-screen px-4 py-6 sm:px-6 lg:px-8">
@@ -125,20 +120,12 @@ export default function OrderConfirmationPage() {
           <div className="mt-6 flex flex-col gap-3 border-t border-orange-100 pt-6 sm:flex-row sm:items-center sm:justify-between">
             <p className="text-lg font-bold text-slate-900">Total {formatCurrency(order.total)}</p>
             <div className="flex flex-wrap gap-3">
-              <Link href={`/track?orderId=${order.id}`}>
-                <Button variant="secondary">Track Order</Button>
+              <Link href="/menu">
+                <Button variant="secondary">Back To Menu</Button>
               </Link>
-              <Button
-                variant="danger"
-                disabled={!canCancel}
-                onClick={() => {
-                  if (canCancel) {
-                    cancelOrder(order.id);
-                  }
-                }}
-              >
-                {canCancel ? `Cancel (${cancelMinutesRemaining} min left)` : "Cancellation Closed"}
-              </Button>
+              <Link href={`/track?orderId=${order.id}`}>
+                <Button>Track Order</Button>
+              </Link>
             </div>
           </div>
         </Card>

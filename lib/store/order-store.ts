@@ -4,6 +4,9 @@ import { create } from "zustand";
 import { persist, createJSONStorage } from "zustand/middleware";
 import type { CartItem, OrderDTO, OrderStatus, PaymentMethod, PaymentStatus } from "@/lib/types";
 
+const ORDER_STORAGE_KEY = "restaurant-orders";
+const CANCELLATION_WINDOW_MS = 5 * 60 * 1000;
+
 type OrderStore = {
   orders: OrderDTO[];
   createOrder: (input: {
@@ -19,35 +22,73 @@ type OrderStore = {
   cancelOrder: (id: string) => boolean;
 };
 
+type PersistedOrderStore = {
+  state?: {
+    orders?: OrderDTO[];
+  };
+  version?: number;
+};
+
 function fakeOrderId() {
   return `ORD-${Math.floor(100000 + Math.random() * 900000)}`;
 }
 
-function estimateStatus(order: OrderDTO): OrderStatus {
-  if (order.status === "CANCELLED" || order.status === "SERVED") {
-    return order.status;
-  }
-
-  const minutes = Math.max(
-    0,
-    Math.floor((Date.now() - new Date(order.createdAt).getTime()) / 60000)
-  );
-
-  if (minutes >= 18) return "SERVED";
-  if (minutes >= 12) return "READY";
-  if (minutes >= 5) return "IN_KITCHEN";
-  return "ORDER_TAKEN";
+function isClient() {
+  return typeof window !== "undefined";
 }
 
-function syncOrder(order: OrderDTO) {
-  return {
-    ...order,
-    status: estimateStatus(order)
-  };
+function getOrdersSnapshot(orders: OrderDTO[]) {
+  if (orders.length) {
+    return orders;
+  }
+
+  return getStoredOrders();
+}
+
+export function getStoredOrders() {
+  if (!isClient()) {
+    return [] as OrderDTO[];
+  }
+
+  try {
+    const rawValue = window.localStorage.getItem(ORDER_STORAGE_KEY);
+    if (!rawValue) {
+      return [] as OrderDTO[];
+    }
+
+    const parsed = JSON.parse(rawValue) as PersistedOrderStore;
+    return parsed.state?.orders ?? [];
+  } catch {
+    return [] as OrderDTO[];
+  }
+}
+
+export function getStoredOrderById(id: string) {
+  return getStoredOrders().find((order) => order.id === id);
+}
+
+export function canCancelOrder(order: OrderDTO | null | undefined) {
+  if (!order) {
+    return false;
+  }
+
+  if (order.status === "CANCELLED" || order.status === "SERVED") {
+    return false;
+  }
+
+  return Date.now() - new Date(order.createdAt).getTime() <= CANCELLATION_WINDOW_MS;
+}
+
+export function getCancellationTimeRemaining(order: OrderDTO | null | undefined) {
+  if (!order) {
+    return 0;
+  }
+
+  return Math.max(0, CANCELLATION_WINDOW_MS - (Date.now() - new Date(order.createdAt).getTime()));
 }
 
 export function getLiveOrder(order: OrderDTO | null | undefined) {
-  return order ? syncOrder(order) : null;
+  return order ?? null;
 }
 
 export const useOrderStore = create<OrderStore>()(
@@ -83,31 +124,33 @@ export const useOrderStore = create<OrderStore>()(
           }))
         };
 
-        set((state) => ({ orders: [order, ...state.orders] }));
+        set((state) => ({ orders: [order, ...getOrdersSnapshot(state.orders)] }));
         return order;
       },
       getOrderById: (id) => {
-        const order = get().orders.find((item) => item.id === id);
-        return order ? syncOrder(order) : undefined;
+        const localStorageOrder = getStoredOrderById(id);
+        if (localStorageOrder) {
+          return localStorageOrder;
+        }
+
+        return get().orders.find((item) => item.id === id);
       },
       updateOrderStatus: (id, status) =>
         set((state) => ({
-          orders: state.orders.map((order) => (order.id === id ? { ...order, status } : order))
+          orders: getOrdersSnapshot(state.orders).map((order) =>
+            order.id === id ? { ...order, status } : order
+          )
         })),
       cancelOrder: (id) => {
-        const order = get().orders.find((item) => item.id === id);
+        const order = getStoredOrderById(id) ?? get().orders.find((item) => item.id === id);
         if (!order) return false;
 
-        const minutesElapsed = Math.floor(
-          (Date.now() - new Date(order.createdAt).getTime()) / 60000
-        );
-
-        if (minutesElapsed > 5 || order.status === "SERVED") {
+        if (!canCancelOrder(order)) {
           return false;
         }
 
         set((state) => ({
-          orders: state.orders.map((item) =>
+          orders: getOrdersSnapshot(state.orders).map((item) =>
             item.id === id ? { ...item, status: "CANCELLED" } : item
           )
         }));
@@ -115,24 +158,23 @@ export const useOrderStore = create<OrderStore>()(
       }
     }),
     {
-      name: "restaurant-orders",
+      name: ORDER_STORAGE_KEY,
       storage: createJSONStorage(() => localStorage)
     }
   )
 );
 
 export function getOrderStats(orders: OrderDTO[]) {
-  const syncedOrders = orders.map(syncOrder);
   return {
-    orders: syncedOrders,
-    totalOrders: syncedOrders.length,
-    revenue: syncedOrders
+    orders,
+    totalOrders: orders.length,
+    revenue: orders
       .filter((order) => order.status !== "CANCELLED")
       .reduce((sum, order) => sum + order.total, 0),
-    activeOrders: syncedOrders.filter((order) =>
+    activeOrders: orders.filter((order) =>
       ["ORDER_TAKEN", "IN_KITCHEN", "READY"].includes(order.status)
     ).length,
-    completed: syncedOrders.filter((order) => order.status === "SERVED").length,
-    cancelled: syncedOrders.filter((order) => order.status === "CANCELLED").length
+    completed: orders.filter((order) => order.status === "SERVED").length,
+    cancelled: orders.filter((order) => order.status === "CANCELLED").length
   };
 }

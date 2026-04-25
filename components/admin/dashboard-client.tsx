@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { format } from "date-fns";
 import { useRouter } from "next/navigation";
-import type { MenuItemDTO, OrderStatus } from "@/lib/types";
+import type { MenuItemDTO } from "@/lib/types";
 import { categories } from "@/lib/types";
 import { useAdminStore } from "@/lib/store/admin-store";
 import { useMenuStore } from "@/lib/store/menu-store";
@@ -432,17 +432,42 @@ export function DashboardClient() {
                   <div className="mt-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                     <p className="font-semibold text-slate-900">{formatCurrency(order.total)}</p>
                     <div className="flex flex-wrap gap-2">
-                      {["ORDER_TAKEN", "IN_KITCHEN", "READY", "SERVED", "CANCELLED"].map((status) => (
-                        <Button
-                          key={status}
-                          type="button"
-                          variant="secondary"
-                          className="px-3 py-2 text-xs"
-                          onClick={() => updateStatus(order.id, status as OrderStatus)}
-                        >
-                          {status.replaceAll("_", " ")}
-                        </Button>
-                      ))}
+                      <Button
+                        type="button"
+                        variant="secondary"
+                        className="px-3 py-2 text-xs"
+                        disabled={order.status === "CANCELLED"}
+                        onClick={() => updateStatus(order.id, "IN_KITCHEN")}
+                      >
+                        In Kitchen
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="secondary"
+                        className="px-3 py-2 text-xs"
+                        disabled={order.status === "CANCELLED"}
+                        onClick={() => updateStatus(order.id, "READY")}
+                      >
+                        Ready
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="secondary"
+                        className="px-3 py-2 text-xs"
+                        disabled={order.status === "CANCELLED"}
+                        onClick={() => updateStatus(order.id, "SERVED")}
+                      >
+                        Served
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="danger"
+                        className="px-3 py-2 text-xs"
+                        disabled={order.status === "SERVED" || order.status === "CANCELLED"}
+                        onClick={() => updateStatus(order.id, "CANCELLED")}
+                      >
+                        Cancelled
+                      </Button>
                     </div>
                   </div>
                 </div>
