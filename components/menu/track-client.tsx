@@ -1,11 +1,12 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { CircleDashed, CookingPot, PartyPopper, ReceiptText, XCircle } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
+import { PaymentSlipCard } from "@/components/order/payment-slip-card";
 import type { OrderDTO } from "@/lib/types";
 import {
   canCancelOrder,
@@ -14,6 +15,8 @@ import {
   getStoredOrderById,
   useOrderStore
 } from "@/lib/store/order-store";
+import { useToastStore } from "@/lib/store/toast-store";
+import { openInvoicePdf } from "@/lib/utils";
 
 const steps = [
   { key: "ORDER_TAKEN", label: "Order Taken", icon: ReceiptText },
@@ -26,11 +29,13 @@ export function TrackClient() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const cancelOrder = useOrderStore((state) => state.cancelOrder);
+  const pushToast = useToastStore((state) => state.pushToast);
   const [orderId, setOrderId] = useState(searchParams.get("orderId") ?? "");
   const [searchValue, setSearchValue] = useState(searchParams.get("orderId") ?? "");
   const [order, setOrder] = useState<OrderDTO | null>(null);
   const [error, setError] = useState("");
   const [timeRemainingMs, setTimeRemainingMs] = useState(0);
+  const lastStatusRef = useRef<string | null>(null);
 
   useEffect(() => {
     if (!orderId) return;
@@ -40,10 +45,20 @@ export function TrackClient() {
       if (!nextOrder) {
         setOrder(null);
         setTimeRemainingMs(0);
+        lastStatusRef.current = null;
         setError("Order not found.");
         return;
       }
 
+      if (lastStatusRef.current && lastStatusRef.current !== nextOrder.status) {
+        pushToast({
+          title: `Order ${nextOrder.status.replaceAll("_", " ").toLowerCase()}`,
+          description: `Tracking for ${nextOrder.id} just moved to ${nextOrder.status.replaceAll("_", " ")}.`,
+          tone: nextOrder.status === "SERVED" ? "success" : "info"
+        });
+      }
+
+      lastStatusRef.current = nextOrder.status;
       setOrder(nextOrder);
       setTimeRemainingMs(getCancellationTimeRemaining(nextOrder));
       setError("");
@@ -55,62 +70,73 @@ export function TrackClient() {
     return () => {
       window.clearInterval(interval);
     };
-  }, [orderId]);
+  }, [orderId, pushToast]);
 
   const canCancel = canCancelOrder(order);
   const cancellationMinutesLeft = Math.max(1, Math.ceil(timeRemainingMs / 60000));
 
   return (
     <main className="min-h-screen px-4 py-6 sm:px-6 lg:px-8">
-      <div className="mx-auto max-w-4xl space-y-8">
-        <Card className="p-8">
-          <Button
-            variant="ghost"
-            className="mb-6 px-0 text-sm font-semibold text-slate-500 hover:bg-transparent hover:text-orange-600"
-            onClick={() => {
-              if (window.history.length > 1) {
-                router.back();
-                return;
-              }
+      <div className="mx-auto max-w-5xl space-y-8">
+        <Card className="hero-wave overflow-hidden bg-white p-8 sm:p-10">
+          <div className="relative z-10">
+            <Button
+              variant="ghost"
+              className="mb-6 rounded-full bg-[#23233f] px-5 py-3 text-sm font-semibold text-white shadow-soft hover:bg-[#17172b] hover:text-white"
+              onClick={() => {
+                if (window.history.length > 1) {
+                  router.back();
+                  return;
+                }
 
-              router.push("/menu");
-            }}
-          >
-            Back
-          </Button>
-          <p className="text-sm uppercase tracking-[0.25em] text-orange-500">Live Tracking</p>
-          <h1 className="mt-2 text-4xl font-bold text-slate-900">Follow your order in real time</h1>
-          <div className="mt-6 flex flex-col gap-3 sm:flex-row">
-            <Input
-              value={searchValue}
-              onChange={(event) => setSearchValue(event.target.value)}
-              placeholder="Enter your order ID"
-            />
-            <Button onClick={() => setOrderId(searchValue.trim())}>Track</Button>
+                router.push("/menu");
+              }}
+            >
+              Back
+            </Button>
+            <p className="text-sm uppercase tracking-[0.25em] text-orange-500">Live Tracking</p>
+            <h1 className="font-display mt-2 text-5xl font-bold leading-[0.98] text-[#23233f]">
+              Follow your order in real time.
+            </h1>
+            <p className="mt-4 max-w-2xl text-base leading-7 text-slate-500">
+              This screen reads directly from local storage every 2 seconds, so updates from checkout,
+              cancellation, and admin controls stay synchronized.
+            </p>
+            <div className="mt-6 flex flex-col gap-3 sm:flex-row">
+              <Input
+                value={searchValue}
+                onChange={(event) => setSearchValue(event.target.value)}
+                placeholder="Enter your order ID"
+              />
+              <Button onClick={() => setOrderId(searchValue.trim())}>Track</Button>
+            </div>
+            {error ? <p className="mt-3 text-sm text-rose-500">{error}</p> : null}
           </div>
-          {error ? <p className="mt-3 text-sm text-rose-500">{error}</p> : null}
         </Card>
 
         {order ? (
           <Card className="p-8">
-            <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
               <div>
-                <h2 className="text-2xl font-bold text-slate-900">Order {order.id}</h2>
-                <p className="text-sm text-slate-500">Table {order.tableNumber}</p>
+                <p className="text-sm font-bold uppercase tracking-[0.2em] text-[#ff7a1a]">Tracking Status</p>
+                <h2 className="font-display mt-2 text-4xl font-bold text-[#23233f]">Order {order.id}</h2>
+                <p className="mt-2 text-sm text-slate-500">Table {order.tableNumber}</p>
               </div>
-              <p className="text-sm font-semibold text-orange-600">{order.status.replaceAll("_", " ")}</p>
+              <div className="rounded-full bg-[#fff2e6] px-4 py-2 text-sm font-bold text-[#ff7a1a]">
+                {order.status.replaceAll("_", " ")}
+              </div>
             </div>
 
             {order.status === "CANCELLED" ? (
-              <div className="mt-8 rounded-[28px] border border-rose-100 bg-rose-50 p-6">
-                <div className="flex items-center gap-3">
-                  <div className="rounded-2xl bg-rose-500 p-3 text-white">
-                    <XCircle className="h-5 w-5" />
+              <div className="mt-8 rounded-[30px] border border-rose-100 bg-rose-50 p-6">
+                <div className="flex items-center gap-4">
+                  <div className="rounded-3xl bg-rose-500 p-3 text-white">
+                    <XCircle className="h-6 w-6" />
                   </div>
                   <div>
-                    <p className="font-semibold text-slate-900">This order has been cancelled</p>
-                    <p className="text-sm text-slate-500">
-                      Status changes are being read directly from local storage every 2 seconds.
+                    <p className="font-display text-3xl font-bold text-[#23233f]">This order has been cancelled</p>
+                    <p className="mt-2 text-sm text-slate-500">
+                      The cancellation was stored locally and reflected instantly in tracking.
                     </p>
                   </div>
                 </div>
@@ -125,27 +151,39 @@ export function TrackClient() {
                   return (
                     <div
                       key={step.key}
-                      className={`rounded-[28px] border p-5 ${
-                        active ? "border-orange-200 bg-orange-50" : "border-slate-100 bg-white"
+                      className={`rounded-[30px] p-5 shadow-soft ${
+                        active ? "bg-[#fff3e7]" : "bg-white"
                       }`}
                     >
                       <div
-                        className={`inline-flex rounded-2xl p-3 ${
-                          active ? "bg-orange-500 text-white" : "bg-slate-100 text-slate-400"
+                        className={`inline-flex rounded-3xl p-3 ${
+                          active ? "bg-[#ff7a1a] text-white" : "bg-slate-100 text-slate-400"
                         }`}
                       >
                         <Icon className="h-5 w-5" />
                       </div>
-                      <p className="mt-4 font-semibold text-slate-900">{step.label}</p>
+                      <p className="font-display mt-4 text-2xl font-bold text-[#23233f]">{step.label}</p>
                     </div>
                   );
                 })}
               </div>
             )}
 
-            <div className="mt-8 flex flex-col gap-3 border-t border-orange-100 pt-6 sm:flex-row sm:items-center sm:justify-between">
+            <PaymentSlipCard
+              order={order}
+              onDownload={() => {
+                openInvoicePdf(order);
+                pushToast({
+                  title: "Payment slip ready",
+                  description: "The payment slip is ready to print or save as PDF.",
+                  tone: "info"
+                });
+              }}
+            />
+
+            <div className="mt-8 flex flex-col gap-4 border-t border-orange-100 pt-6 sm:flex-row sm:items-center sm:justify-between">
               <div>
-                <p className="text-sm text-slate-500">Tracking refreshes from local storage every 2 seconds.</p>
+                <p className="text-sm text-slate-500">Tracking refreshes automatically every 2 seconds.</p>
                 {canCancel ? (
                   <p className="mt-1 text-sm text-amber-700">
                     You can still cancel this order for about {cancellationMinutesLeft} minute
@@ -153,22 +191,30 @@ export function TrackClient() {
                   </p>
                 ) : null}
               </div>
-              {canCancel ? (
-                <Button
-                  variant="danger"
-                  onClick={() => {
-                    const cancelled = cancelOrder(order.id);
-                    if (cancelled) {
-                      setTimeRemainingMs(0);
-                      setOrder({ ...order, status: "CANCELLED" });
-                    } else {
-                      setTimeRemainingMs(0);
-                    }
-                  }}
-                >
-                  Cancel Order
-                </Button>
-              ) : null}
+              <div className="flex flex-wrap gap-3">
+                {canCancel ? (
+                  <Button
+                    variant="danger"
+                    onClick={() => {
+                      const cancelled = cancelOrder(order.id);
+                      if (cancelled) {
+                        setTimeRemainingMs(0);
+                        setOrder({ ...order, status: "CANCELLED" });
+                        lastStatusRef.current = "CANCELLED";
+                        pushToast({
+                          title: "Order cancelled",
+                          description: "The order status has been updated in local storage.",
+                          tone: "warning"
+                        });
+                      } else {
+                        setTimeRemainingMs(0);
+                      }
+                    }}
+                  >
+                    Cancel Order
+                  </Button>
+                ) : null}
+              </div>
             </div>
           </Card>
         ) : null}

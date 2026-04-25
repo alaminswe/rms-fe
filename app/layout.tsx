@@ -1,13 +1,19 @@
 import type { Metadata } from "next";
-import { Sora } from "next/font/google";
+import { Manrope, Playfair_Display } from "next/font/google";
 import type { ReactNode } from "react";
 import "./globals.css";
 import { CartProvider } from "@/lib/store/cart-store";
 import { cn } from "@/lib/utils";
+import { ToastRegion } from "@/components/ui/toast-region";
 
-const sora = Sora({
+const manrope = Manrope({
   subsets: ["latin"],
   variable: "--font-sans"
+});
+
+const playfair = Playfair_Display({
+  subsets: ["latin"],
+  variable: "--font-display"
 });
 
 export const metadata: Metadata = {
@@ -22,8 +28,11 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en">
-      <body className={cn(sora.variable, "font-sans antialiased")}>
-        <CartProvider>{children}</CartProvider>
+      <body className={cn(manrope.variable, playfair.variable, "font-sans antialiased")}>
+        <CartProvider>
+          <ToastRegion />
+          {children}
+        </CartProvider>
       </body>
     </html>
   );

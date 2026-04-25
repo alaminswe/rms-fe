@@ -20,7 +20,8 @@ export const useAdminStore = create<AdminStore>()(
       isAuthenticated: false,
       login: (email, password) => {
         const success =
-          email === defaultCredentials.email && password === defaultCredentials.password;
+          email.trim().toLowerCase() === defaultCredentials.email &&
+          password === defaultCredentials.password;
         if (success) {
           set({ isAuthenticated: true });
         }

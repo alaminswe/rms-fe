@@ -11,7 +11,7 @@ export function CartButton() {
     <button
       type="button"
       onClick={openCart}
-      className="relative rounded-full bg-slate-900 px-5 py-3 text-sm font-semibold text-white transition hover:-translate-y-0.5"
+      className="relative rounded-full bg-[#23233f] px-5 py-3 text-sm font-semibold text-white transition hover:-translate-y-0.5"
     >
       <span className="flex items-center gap-2">
         <ShoppingBag className="h-4 w-4" />

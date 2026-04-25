@@ -1,7 +1,7 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { useRouter } from "next/navigation";
+import { Suspense, useEffect, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import Image from "next/image";
 import { CreditCard, Landmark, Wallet } from "lucide-react";
 import { Card } from "@/components/ui/card";
@@ -10,6 +10,7 @@ import { Button } from "@/components/ui/button";
 import { useCart } from "@/lib/store/cart-store";
 import { useOrderStore } from "@/lib/store/order-store";
 import { useTableStore } from "@/lib/store/table-store";
+import { useToastStore } from "@/lib/store/toast-store";
 import { paymentMethods, type PaymentMethod } from "@/lib/types";
 import { formatCurrency } from "@/lib/utils";
 
@@ -26,13 +27,16 @@ function formatExpiry(value: string) {
   return `${digits.slice(0, 2)}/${digits.slice(2)}`;
 }
 
-export default function CheckoutPage() {
+function CheckoutContent() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const items = useCart((state) => state.items);
   const total = useCart((state) => state.total);
   const clearCart = useCart((state) => state.clearCart);
   const createOrder = useOrderStore((state) => state.createOrder);
   const joinedTable = useTableStore((state) => state.joinedTable);
+  const joinTable = useTableStore((state) => state.joinTable);
+  const pushToast = useToastStore((state) => state.pushToast);
   const [tableNumber, setTableNumber] = useState(joinedTable);
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>("CASH");
   const [cardholderName, setCardholderName] = useState("Alex Carter");
@@ -49,6 +53,17 @@ export default function CheckoutPage() {
       setTableNumber(joinedTable);
     }
   }, [joinedTable, tableNumber]);
+
+  useEffect(() => {
+    const qrTable = searchParams.get("table") ?? searchParams.get("qr");
+    if (!qrTable?.trim()) {
+      return;
+    }
+
+    const normalizedTable = qrTable.trim().toUpperCase();
+    joinTable(normalizedTable);
+    setTableNumber(normalizedTable);
+  }, [joinTable, searchParams]);
 
   async function handleSubmit() {
     setLoading(true);
@@ -119,6 +134,11 @@ export default function CheckoutPage() {
             : undefined
       });
       window.localStorage.setItem("latest-order-id", order.id);
+      pushToast({
+        title: "Order placed successfully",
+        description: `Your order ID is ${order.id}. You can now follow it live.`,
+        tone: "success"
+      });
       clearCart();
       router.push(`/order/${order.id}`);
     } catch {
@@ -130,80 +150,123 @@ export default function CheckoutPage() {
 
   return (
     <main className="min-h-screen px-4 py-6 sm:px-6 lg:px-8">
-      <div className="mx-auto max-w-6xl">
-        <div className="mb-8">
-          <p className="text-sm uppercase tracking-[0.25em] text-orange-500">Checkout</p>
-          <h1 className="mt-2 text-4xl font-bold text-slate-900">Review and place your order</h1>
-        </div>
+      <div className="mx-auto max-w-7xl space-y-8">
+        <section className="hero-wave rounded-[40px] bg-white px-6 py-10 shadow-soft sm:px-8">
+          <div className="relative z-10 grid gap-8 lg:grid-cols-[1.05fr_0.95fr] lg:items-center">
+            <div>
+              <p className="text-sm font-bold uppercase tracking-[0.24em] text-[#ff7a1a]">Checkout</p>
+              <h1 className="font-display mt-3 text-5xl font-bold leading-[0.98] text-[#23233f]">
+                Review and place your order with a warm, polished checkout flow.
+              </h1>
+              <p className="mt-4 max-w-xl text-base leading-7 text-slate-500">
+                Confirm your table, choose a demo payment method, and send the order straight into the
+                live tracking experience.
+              </p>
+            </div>
+            <div className="grid gap-4 sm:grid-cols-3">
+              {[
+                ["Table", tableNumber || "A12"],
+                ["Items", String(items.length)],
+                ["Total", formatCurrency(total)]
+              ].map(([label, value]) => (
+                <div key={label} className="rounded-[28px] bg-[#fffaf6] p-5 shadow-soft">
+                  <p className="text-sm text-slate-400">{label}</p>
+                  <p className="mt-3 text-2xl font-extrabold text-[#23233f]">{value}</p>
+                </div>
+              ))}
+            </div>
+          </div>
+        </section>
 
-        <div className="grid gap-8 lg:grid-cols-[1.15fr_0.85fr]">
-          <Card className="p-6">
-            <h2 className="text-xl font-bold text-slate-900">Order Summary</h2>
-            <div className="mt-5 space-y-4">
+        <div className="grid gap-8 lg:grid-cols-[1.1fr_0.9fr]">
+          <Card className="p-6 sm:p-8">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm font-bold uppercase tracking-[0.2em] text-[#ff7a1a]">Order Summary</p>
+                <h2 className="font-display mt-2 text-4xl font-bold text-[#23233f]">Your selected dishes</h2>
+              </div>
+            </div>
+            <div className="mt-6 space-y-4">
               {items.map((item) => (
                 <div
                   key={`${item.id}-${item.specialInstructions ?? ""}`}
-                  className="flex gap-4 rounded-[28px] border border-orange-100 p-4"
+                  className="rounded-[30px] bg-[#fffaf6] p-4 shadow-soft"
                 >
-                  <div className="relative h-20 w-20 overflow-hidden rounded-2xl">
-                    <Image src={item.imageUrl} alt={item.name} fill className="object-cover" sizes="80px" />
-                  </div>
-                  <div className="flex-1">
-                    <div className="flex items-center justify-between gap-3">
-                      <div>
-                        <p className="font-semibold text-slate-900">{item.name}</p>
-                        <p className="text-sm text-slate-500">Qty {item.quantity}</p>
-                      </div>
-                      <p className="font-semibold text-slate-900">
-                        {formatCurrency(item.price * item.quantity)}
-                      </p>
+                  <div className="flex gap-4">
+                    <div className="relative h-24 w-24 overflow-hidden rounded-[24px]">
+                      <Image src={item.imageUrl} alt={item.name} fill className="object-cover" sizes="96px" />
                     </div>
-                    {item.specialInstructions ? (
-                      <p className="mt-2 text-sm text-slate-500">Note: {item.specialInstructions}</p>
-                    ) : null}
+                    <div className="flex-1">
+                      <div className="flex items-center justify-between gap-3">
+                        <div>
+                          <p className="font-display text-2xl font-bold text-[#23233f]">{item.name}</p>
+                          <p className="text-sm text-slate-500">Qty {item.quantity}</p>
+                        </div>
+                        <p className="font-bold text-[#23233f]">{formatCurrency(item.price * item.quantity)}</p>
+                      </div>
+                      {item.specialInstructions ? (
+                        <p className="mt-2 text-sm text-slate-500">Note: {item.specialInstructions}</p>
+                      ) : null}
+                    </div>
                   </div>
                 </div>
               ))}
               {!items.length ? (
-                <div className="rounded-[28px] bg-orange-50 p-8 text-center text-slate-500">
+                <div className="rounded-[30px] bg-[#fff7f0] p-8 text-center text-slate-500">
                   Your cart is empty. Return to the menu to add items before checkout.
                 </div>
               ) : null}
             </div>
           </Card>
 
-          <Card className="h-fit p-6">
-            <h2 className="text-xl font-bold text-slate-900">Table Details</h2>
-            <div className="mt-5 space-y-4">
+          <Card className="h-fit p-6 sm:p-8">
+            <p className="text-sm font-bold uppercase tracking-[0.2em] text-[#ff7a1a]">Payment & Table</p>
+            <h2 className="font-display mt-2 text-4xl font-bold text-[#23233f]">Complete your order</h2>
+
+            <div className="mt-6 space-y-5">
               <div>
-                <label className="mb-2 block text-sm font-medium text-slate-600">Table Number</label>
+                <label className="mb-2 block text-sm font-semibold text-slate-600">Table Number</label>
                 <Input
                   value={tableNumber}
-                  onChange={(event) => setTableNumber(event.target.value)}
-                  placeholder="e.g. A12"
+                  onChange={(event) => {
+                    const nextValue = event.target.value.toUpperCase();
+                    setTableNumber(nextValue);
+                    if (nextValue.trim()) {
+                      joinTable(nextValue);
+                    }
+                  }}
+                  placeholder="From QR or type e.g. A12"
                 />
+                <p className="mt-2 text-xs text-slate-400">
+                  Table number can be prefilled from a QR link like `?table=A12` or entered manually.
+                </p>
               </div>
-              <div className="rounded-[28px] bg-orange-50 p-5">
+
+              <div className="rounded-[30px] bg-[#fff7f0] p-5">
                 <div className="flex items-center justify-between text-sm text-slate-500">
                   <span>Subtotal</span>
                   <span>{formatCurrency(total)}</span>
                 </div>
-                <div className="mt-3 flex items-center justify-between text-lg font-bold text-slate-900">
+                <div className="mt-3 flex items-center justify-between text-lg font-bold text-[#23233f]">
                   <span>Total</span>
                   <span>{formatCurrency(total)}</span>
                 </div>
               </div>
-              <div className="rounded-[28px] border border-orange-100 bg-white/80 p-5">
-                <div className="mb-4 flex items-center justify-between">
-                  <div>
-                    <h3 className="text-base font-bold text-slate-900">Payment Method</h3>
-                    <p className="text-sm text-slate-500">Choose cash or a demo online payment option.</p>
+
+              <div className="rounded-[30px] bg-white shadow-soft">
+                <div className="border-b border-orange-100 px-5 py-5">
+                  <div className="flex items-center justify-between gap-3">
+                    <div>
+                      <h3 className="font-display text-2xl font-bold text-[#23233f]">Payment Method</h3>
+                      <p className="text-sm text-slate-500">Choose cash or a demo online payment option.</p>
+                    </div>
+                    <span className="rounded-full bg-emerald-50 px-3 py-1 text-xs font-semibold text-emerald-700">
+                      Secure Demo
+                    </span>
                   </div>
-                  <span className="rounded-full bg-emerald-50 px-3 py-1 text-xs font-semibold text-emerald-700">
-                    Secure Demo
-                  </span>
                 </div>
-                <div className="space-y-3">
+
+                <div className="space-y-4 px-5 py-5">
                   <div className="grid grid-cols-2 gap-3">
                     {paymentMethods.map((method) => {
                       const active = method === paymentMethod;
@@ -221,10 +284,10 @@ export default function CheckoutPage() {
                           key={method}
                           type="button"
                           onClick={() => setPaymentMethod(method)}
-                          className={`flex items-center gap-2 rounded-2xl border px-4 py-3 text-sm font-semibold transition ${
+                          className={`flex items-center gap-2 rounded-[22px] border px-4 py-3 text-sm font-semibold transition ${
                             active
-                              ? "border-orange-400 bg-orange-50 text-orange-700"
-                              : "border-orange-100 bg-white text-slate-600"
+                              ? "border-orange-300 bg-[#fff3e7] text-[#ff7a1a]"
+                              : "border-[rgba(255,133,36,0.14)] bg-white text-slate-600"
                           }`}
                         >
                           {icon}
@@ -235,58 +298,58 @@ export default function CheckoutPage() {
                   </div>
 
                   {paymentMethod === "CASH" ? (
-                    <div className="rounded-2xl bg-amber-50 px-4 py-4 text-sm text-amber-800">
+                    <div className="rounded-[24px] bg-amber-50 px-4 py-4 text-sm text-amber-800">
                       Cash payment selected. The order will be confirmed now and payment will be collected at the table.
                     </div>
                   ) : null}
 
                   {paymentMethod === "CARD" ? (
                     <>
-                  <div>
-                    <label className="mb-2 block text-sm font-medium text-slate-600">Cardholder Name</label>
-                    <Input
-                      value={cardholderName}
-                      onChange={(event) => setCardholderName(event.target.value)}
-                      placeholder="Alex Carter"
-                    />
-                  </div>
-                  <div>
-                    <label className="mb-2 block text-sm font-medium text-slate-600">Card Number</label>
-                    <Input
-                      value={cardNumber}
-                      onChange={(event) => setCardNumber(formatCardNumber(event.target.value))}
-                      placeholder="4242 4242 4242 4242"
-                      inputMode="numeric"
-                    />
-                  </div>
-                  <div className="grid grid-cols-2 gap-3">
-                    <div>
-                      <label className="mb-2 block text-sm font-medium text-slate-600">Expiry</label>
-                      <Input
-                        value={expiryDate}
-                        onChange={(event) => setExpiryDate(formatExpiry(event.target.value))}
-                        placeholder="12/28"
-                        inputMode="numeric"
-                      />
-                    </div>
-                    <div>
-                      <label className="mb-2 block text-sm font-medium text-slate-600">CVV</label>
-                      <Input
-                        value={cvv}
-                        onChange={(event) => setCvv(event.target.value.replace(/\D/g, "").slice(0, 4))}
-                        placeholder="123"
-                        inputMode="numeric"
-                        type="password"
-                      />
-                    </div>
-                  </div>
+                      <div>
+                        <label className="mb-2 block text-sm font-semibold text-slate-600">Cardholder Name</label>
+                        <Input
+                          value={cardholderName}
+                          onChange={(event) => setCardholderName(event.target.value)}
+                          placeholder="Alex Carter"
+                        />
+                      </div>
+                      <div>
+                        <label className="mb-2 block text-sm font-semibold text-slate-600">Card Number</label>
+                        <Input
+                          value={cardNumber}
+                          onChange={(event) => setCardNumber(formatCardNumber(event.target.value))}
+                          placeholder="4242 4242 4242 4242"
+                          inputMode="numeric"
+                        />
+                      </div>
+                      <div className="grid grid-cols-2 gap-3">
+                        <div>
+                          <label className="mb-2 block text-sm font-semibold text-slate-600">Expiry</label>
+                          <Input
+                            value={expiryDate}
+                            onChange={(event) => setExpiryDate(formatExpiry(event.target.value))}
+                            placeholder="12/28"
+                            inputMode="numeric"
+                          />
+                        </div>
+                        <div>
+                          <label className="mb-2 block text-sm font-semibold text-slate-600">CVV</label>
+                          <Input
+                            value={cvv}
+                            onChange={(event) => setCvv(event.target.value.replace(/\D/g, "").slice(0, 4))}
+                            placeholder="123"
+                            inputMode="numeric"
+                            type="password"
+                          />
+                        </div>
+                      </div>
                     </>
                   ) : null}
 
                   {paymentMethod === "BKASH" || paymentMethod === "NAGAD" || paymentMethod === "ROCKET" ? (
                     <>
                       <div>
-                        <label className="mb-2 block text-sm font-medium text-slate-600">
+                        <label className="mb-2 block text-sm font-semibold text-slate-600">
                           {paymentMethod === "BKASH"
                             ? "bKash Number"
                             : paymentMethod === "NAGAD"
@@ -303,7 +366,7 @@ export default function CheckoutPage() {
                         />
                       </div>
                       <div>
-                        <label className="mb-2 block text-sm font-medium text-slate-600">Transaction Reference</label>
+                        <label className="mb-2 block text-sm font-semibold text-slate-600">Transaction Reference</label>
                         <Input
                           value={walletReference}
                           onChange={(event) => setWalletReference(event.target.value.toUpperCase())}
@@ -314,10 +377,12 @@ export default function CheckoutPage() {
                   ) : null}
                 </div>
               </div>
+
               {error ? <p className="text-sm text-rose-500">{error}</p> : null}
+
               <Button
                 className="w-full"
-                disabled={!items.length || !tableNumber.trim() || loading}
+                disabled={!items.length || !tableNumber?.trim() || loading}
                 onClick={handleSubmit}
               >
                 {loading
@@ -333,5 +398,21 @@ export default function CheckoutPage() {
         </div>
       </div>
     </main>
+  );
+}
+
+export default function CheckoutPage() {
+  return (
+    <Suspense
+      fallback={
+        <main className="min-h-screen px-4 py-6 sm:px-6 lg:px-8">
+          <div className="mx-auto max-w-7xl">
+            <div className="h-[640px] animate-pulse rounded-[40px] bg-orange-100/70" />
+          </div>
+        </main>
+      }
+    >
+      <CheckoutContent />
+    </Suspense>
   );
 }

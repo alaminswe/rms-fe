@@ -9,7 +9,12 @@ export function Card({
   className?: string;
 }) {
   return (
-    <div className={cn("glass-panel rounded-[28px] border border-white/60 shadow-soft", className)}>
+    <div
+      className={cn(
+        "glass-panel rounded-[32px] border border-[rgba(255,133,36,0.14)] bg-white/90 shadow-soft",
+        className
+      )}
+    >
       {children}
     </div>
   );

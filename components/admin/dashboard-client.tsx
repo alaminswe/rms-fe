@@ -8,6 +8,7 @@ import { categories } from "@/lib/types";
 import { useAdminStore } from "@/lib/store/admin-store";
 import { useMenuStore } from "@/lib/store/menu-store";
 import { getOrderStats, useOrderStore } from "@/lib/store/order-store";
+import { useToastStore } from "@/lib/store/toast-store";
 import { formatCurrency } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -45,6 +46,7 @@ export function DashboardClient() {
   const toggleAvailability = useMenuStore((state) => state.toggleAvailability);
   const orders = useOrderStore((state) => state.orders);
   const updateStatus = useOrderStore((state) => state.updateOrderStatus);
+  const pushToast = useToastStore((state) => state.pushToast);
   const [hydrated, setHydrated] = useState(false);
   const [period, setPeriod] = useState("Daily");
   const [form, setForm] = useState(emptyForm);
@@ -90,23 +92,21 @@ export function DashboardClient() {
     setLoading(false);
     setForm(emptyForm);
     setEditingId(null);
+    pushToast({
+      title: editingId ? "Menu item updated" : "Menu item added",
+      description: "The frontend menu state has been refreshed locally.",
+      tone: "success"
+    });
   }
 
-  function downloadCsv() {
-    const lines = [
-      ["Order ID", "Table", "Status", "Total", "Created At"].join(","),
-      ...stats.orders.map((order) =>
-        [order.id, order.tableNumber, order.status, order.total, order.createdAt].join(",")
-      )
-    ];
-
-    const blob = new Blob([lines.join("\n")], { type: "text/csv;charset=utf-8;" });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement("a");
-    link.href = url;
-    link.download = `restaurant-report-${period.toLowerCase()}.csv`;
-    link.click();
-    URL.revokeObjectURL(url);
+  function handleLogout() {
+    logout();
+    pushToast({
+      title: "Logged out successfully",
+      description: "Admin access has been closed on this device.",
+      tone: "info"
+    });
+    router.push("/admin/login");
   }
 
   function startEdit(item: MenuItemDTO) {
@@ -142,43 +142,52 @@ export function DashboardClient() {
 
   return (
     <div className="space-y-8">
-      <Card className="flex flex-col gap-4 px-6 py-5 lg:flex-row lg:items-center lg:justify-between">
-        <div>
-          <p className="text-sm uppercase tracking-[0.25em] text-orange-500">Admin Dashboard</p>
-          <h1 className="mt-2 text-3xl font-bold text-slate-900">Restaurant operations at a glance</h1>
+      <Card className="hero-wave overflow-hidden bg-white px-6 py-8 sm:px-8">
+        <div className="relative z-10 flex flex-col gap-5 lg:flex-row lg:items-center lg:justify-between">
+          <div>
+            <p className="text-sm font-bold uppercase tracking-[0.24em] text-[#ff7a1a]">Admin Dashboard</p>
+            <h1 className="font-display mt-3 text-5xl font-bold leading-[0.98] text-[#23233f]">
+              Restaurant operations at a glance
+            </h1>
+            <p className="mt-3 max-w-2xl text-base leading-7 text-slate-500">
+              Manage menu publishing, live order transitions, and mock reports from one editorial control room.
+            </p>
+          </div>
+          <Button
+            variant="secondary"
+            className="bg-white"
+            onClick={handleLogout}
+          >
+            Logout
+          </Button>
         </div>
-        <Button
-          variant="secondary"
-          onClick={() => {
-            logout();
-            router.push("/admin/login");
-          }}
-        >
-          Logout
-        </Button>
       </Card>
 
-      <section className="grid gap-4 md:grid-cols-3">
-        <Card className="p-6">
-          <p className="text-sm text-slate-500">Total Orders</p>
-          <h2 className="mt-3 text-3xl font-bold text-slate-900">{stats.totalOrders}</h2>
-        </Card>
-        <Card className="p-6">
-          <p className="text-sm text-slate-500">Revenue</p>
-          <h2 className="mt-3 text-3xl font-bold text-slate-900">{formatCurrency(stats.revenue)}</h2>
-        </Card>
-        <Card className="p-6">
-          <p className="text-sm text-slate-500">Active Orders</p>
-          <h2 className="mt-3 text-3xl font-bold text-slate-900">{stats.activeOrders}</h2>
-        </Card>
+      <section className="grid gap-4 md:grid-cols-4">
+        {[
+          ["Total Orders", String(stats.totalOrders)],
+          ["Revenue", formatCurrency(stats.revenue)],
+          ["Active Orders", String(stats.activeOrders)],
+          ["Cancelled", String(stats.cancelled)]
+        ].map(([label, value], index) => (
+          <Card key={label} className={`p-6 ${index === 0 ? "section-pattern text-white" : "bg-white"}`}>
+            <div className={index === 0 ? "relative z-10" : undefined}>
+              <p className={`text-sm ${index === 0 ? "text-orange-50" : "text-slate-500"}`}>{label}</p>
+              <h2 className={`mt-3 text-4xl font-extrabold ${index === 0 ? "text-white" : "text-[#23233f]"}`}>
+                {value}
+              </h2>
+            </div>
+          </Card>
+        ))}
       </section>
 
       <section className="grid gap-8 xl:grid-cols-[1.05fr_0.95fr]">
-        <Card className="p-6">
-          <div className="mb-6 flex items-center justify-between">
+        <Card className="bg-white p-6 sm:p-8">
+          <div className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
             <div>
-              <h3 className="text-xl font-bold text-slate-900">Menu Management</h3>
-              <p className="text-sm text-slate-500">Add, update, and control item availability.</p>
+              <p className="text-sm font-bold uppercase tracking-[0.2em] text-[#ff7a1a]">Menu Management</p>
+              <h3 className="font-display mt-2 text-4xl font-bold text-[#23233f]">Create or update dishes</h3>
+              <p className="mt-2 text-sm text-slate-500">Add, update, and control item availability.</p>
             </div>
             {editingId ? (
               <Button
@@ -280,7 +289,7 @@ export function DashboardClient() {
                 ["glutenFree", "Gluten-Free"],
                 ["spicy", "Spicy"]
               ].map(([key, label]) => (
-                <label key={key} className="flex items-center gap-2 rounded-full bg-orange-50 px-4 py-2">
+                <label key={key} className="flex items-center gap-2 rounded-full bg-[#fff4e8] px-4 py-2">
                   <input
                     type="checkbox"
                     checked={Boolean(form[key as keyof typeof form])}
@@ -300,9 +309,9 @@ export function DashboardClient() {
             </Button>
           </form>
 
-          <div className="mt-8 overflow-hidden rounded-[28px] border border-orange-100">
+          <div className="mt-8 overflow-hidden rounded-[32px] border border-orange-100">
             <table className="min-w-full divide-y divide-orange-100 text-sm">
-              <thead className="bg-orange-50/70">
+              <thead className="bg-[#fff6ee]">
                 <tr>
                   <th className="px-4 py-3 text-left">Name</th>
                   <th className="px-4 py-3 text-left">Category</th>
@@ -311,7 +320,7 @@ export function DashboardClient() {
                   <th className="px-4 py-3 text-left">Actions</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-orange-100 bg-white/70">
+              <tbody className="divide-y divide-orange-100 bg-white">
                 {menuItems.map((item) => (
                   <tr key={item.id}>
                     <td className="px-4 py-3 font-medium text-slate-800">{item.name}</td>
@@ -325,7 +334,14 @@ export function DashboardClient() {
                             ? "bg-emerald-50 text-emerald-700"
                             : "bg-slate-100 text-slate-500"
                         }`}
-                        onClick={() => toggleAvailability(item.id)}
+                        onClick={() => {
+                          toggleAvailability(item.id);
+                          pushToast({
+                            title: `${item.name} visibility updated`,
+                            description: "Menu availability changed in local state.",
+                            tone: "info"
+                          });
+                        }}
                       >
                         {item.available ? "Available" : "Hidden"}
                       </button>
@@ -344,7 +360,14 @@ export function DashboardClient() {
                           type="button"
                           variant="danger"
                           className="px-3 py-2 text-xs"
-                          onClick={() => deleteMenuItem(item.id)}
+                          onClick={() => {
+                            deleteMenuItem(item.id);
+                            pushToast({
+                              title: `${item.name} removed`,
+                              description: "The item has been deleted from the frontend menu state.",
+                              tone: "warning"
+                            });
+                          }}
                         >
                           Delete
                         </Button>
@@ -358,11 +381,12 @@ export function DashboardClient() {
         </Card>
 
         <div className="space-y-8">
-          <Card className="p-6">
-            <div className="flex items-center justify-between">
+          <Card className="bg-white p-6 sm:p-8">
+            <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
               <div>
-                <h3 className="text-xl font-bold text-slate-900">Reports</h3>
-                <p className="text-sm text-slate-500">Revenue and order performance snapshot.</p>
+                <p className="text-sm font-bold uppercase tracking-[0.2em] text-[#ff7a1a]">Reports</p>
+                <h3 className="font-display mt-2 text-4xl font-bold text-[#23233f]">Performance snapshot</h3>
+                <p className="mt-2 text-sm text-slate-500">Revenue and order performance overview.</p>
               </div>
               <Select value={period} onChange={(event) => setPeriod(event.target.value)} className="w-36">
                 <option>Daily</option>
@@ -372,34 +396,31 @@ export function DashboardClient() {
             </div>
 
             <div className="mt-6 grid grid-cols-2 gap-4">
-              <div className="rounded-2xl bg-orange-50 p-4">
+              <div className="rounded-[28px] bg-[#fff4e8] p-4">
                 <p className="text-sm text-slate-500">Orders</p>
                 <p className="mt-2 text-2xl font-bold">{stats.totalOrders}</p>
               </div>
-              <div className="rounded-2xl bg-emerald-50 p-4">
+              <div className="rounded-[28px] bg-emerald-50 p-4">
                 <p className="text-sm text-slate-500">Completed</p>
                 <p className="mt-2 text-2xl font-bold">{stats.completed}</p>
               </div>
-              <div className="rounded-2xl bg-rose-50 p-4">
+              <div className="rounded-[28px] bg-rose-50 p-4">
                 <p className="text-sm text-slate-500">Cancelled</p>
                 <p className="mt-2 text-2xl font-bold">{stats.cancelled}</p>
               </div>
-              <div className="rounded-2xl bg-slate-50 p-4">
+              <div className="rounded-[28px] bg-slate-50 p-4">
                 <p className="text-sm text-slate-500">Revenue</p>
                 <p className="mt-2 text-2xl font-bold">{formatCurrency(stats.revenue)}</p>
               </div>
             </div>
-
-            <Button className="mt-6 w-full" onClick={downloadCsv}>
-              Download CSV
-            </Button>
           </Card>
 
-          <Card className="p-6">
-            <h3 className="text-xl font-bold text-slate-900">Order Dashboard</h3>
+          <Card className="bg-white p-6 sm:p-8">
+            <p className="text-sm font-bold uppercase tracking-[0.2em] text-[#ff7a1a]">Order Dashboard</p>
+            <h3 className="font-display mt-2 text-4xl font-bold text-[#23233f]">Kitchen flow</h3>
             <div className="mt-5 space-y-4">
               {stats.orders.map((order) => (
-                <div key={order.id} className="rounded-[28px] border border-orange-100 p-4">
+                <div key={order.id} className="rounded-[30px] bg-[#fffaf6] p-5 shadow-soft">
                   <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                     <div>
                       <p className="text-sm text-slate-400">Order ID</p>
@@ -437,7 +458,14 @@ export function DashboardClient() {
                         variant="secondary"
                         className="px-3 py-2 text-xs"
                         disabled={order.status === "CANCELLED"}
-                        onClick={() => updateStatus(order.id, "IN_KITCHEN")}
+                        onClick={() => {
+                          updateStatus(order.id, "IN_KITCHEN");
+                          pushToast({
+                            title: `Order ${order.id} moved to In Kitchen`,
+                            description: "Customers will see this update from local storage.",
+                            tone: "info"
+                          });
+                        }}
                       >
                         In Kitchen
                       </Button>
@@ -446,7 +474,14 @@ export function DashboardClient() {
                         variant="secondary"
                         className="px-3 py-2 text-xs"
                         disabled={order.status === "CANCELLED"}
-                        onClick={() => updateStatus(order.id, "READY")}
+                        onClick={() => {
+                          updateStatus(order.id, "READY");
+                          pushToast({
+                            title: `Order ${order.id} is ready`,
+                            description: "The tracking page will reflect this update.",
+                            tone: "success"
+                          });
+                        }}
                       >
                         Ready
                       </Button>
@@ -455,7 +490,14 @@ export function DashboardClient() {
                         variant="secondary"
                         className="px-3 py-2 text-xs"
                         disabled={order.status === "CANCELLED"}
-                        onClick={() => updateStatus(order.id, "SERVED")}
+                        onClick={() => {
+                          updateStatus(order.id, "SERVED");
+                          pushToast({
+                            title: `Order ${order.id} served`,
+                            description: "This order has reached the final service stage.",
+                            tone: "success"
+                          });
+                        }}
                       >
                         Served
                       </Button>
@@ -464,7 +506,14 @@ export function DashboardClient() {
                         variant="danger"
                         className="px-3 py-2 text-xs"
                         disabled={order.status === "SERVED" || order.status === "CANCELLED"}
-                        onClick={() => updateStatus(order.id, "CANCELLED")}
+                        onClick={() => {
+                          updateStatus(order.id, "CANCELLED");
+                          pushToast({
+                            title: `Order ${order.id} cancelled`,
+                            description: "The cancellation is now reflected across the frontend flow.",
+                            tone: "warning"
+                          });
+                        }}
                       >
                         Cancelled
                       </Button>
