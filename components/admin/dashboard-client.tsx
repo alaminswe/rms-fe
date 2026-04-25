@@ -2,9 +2,11 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { format } from "date-fns";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import type { MenuItemDTO } from "@/lib/types";
 import { categories } from "@/lib/types";
+import { API_BASE_URL } from "@/lib/api";
 import { useAdminStore } from "@/lib/store/admin-store";
 import { useMenuStore } from "@/lib/store/menu-store";
 import { getOrderStats, useOrderStore } from "@/lib/store/order-store";
@@ -41,9 +43,9 @@ export function DashboardClient() {
   const isAuthenticated = useAdminStore((state) => state.isAuthenticated);
   const logout = useAdminStore((state) => state.logout);
   const menuItems = useMenuStore((state) => state.items);
+  const setMenuItems = useMenuStore((state) => state.setItems);
   const upsertItem = useMenuStore((state) => state.upsertItem);
   const deleteMenuItem = useMenuStore((state) => state.deleteItem);
-  const toggleAvailability = useMenuStore((state) => state.toggleAvailability);
   const orders = useOrderStore((state) => state.orders);
   const updateStatus = useOrderStore((state) => state.updateOrderStatus);
   const pushToast = useToastStore((state) => state.pushToast);
@@ -52,6 +54,9 @@ export function DashboardClient() {
   const [form, setForm] = useState(emptyForm);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const [imageUploading, setImageUploading] = useState(false);
+  const [venueId, setVenueId] = useState("");
+  const [categoryIds, setCategoryIds] = useState<Record<string, string>>({});
 
   useEffect(() => {
     setHydrated(true);
@@ -63,40 +68,120 @@ export function DashboardClient() {
     }
   }, [hydrated, isAuthenticated, router]);
 
+  useEffect(() => {
+    if (!hydrated || !isAuthenticated) {
+      return;
+    }
+
+    let mounted = true;
+
+    async function loadMenuData() {
+      try {
+        const response = await fetch(`${API_BASE_URL}/menu`, { cache: "no-store" });
+        if (!response.ok) return;
+
+        const payload = (await response.json()) as {
+          venue?: { venue_id: string };
+          categories?: Array<{ category_id: string; name: string }>;
+          items?: MenuItemDTO[];
+        };
+
+        if (!mounted) return;
+
+        if (payload.venue?.venue_id) {
+          setVenueId(payload.venue.venue_id);
+        }
+
+        if (payload.categories?.length) {
+          setCategoryIds(
+            Object.fromEntries(
+              payload.categories.map((category) => [category.name, category.category_id] as const)
+            )
+          );
+        }
+
+        if (payload.items?.length) {
+          setMenuItems(payload.items);
+        }
+      } catch {
+        // Keep local state as fallback.
+      }
+    }
+
+    void loadMenuData();
+
+    return () => {
+      mounted = false;
+    };
+  }, [hydrated, isAuthenticated, setMenuItems]);
+
   const stats = useMemo(() => getOrderStats(orders), [orders]);
 
-  function submitMenuItem(event: React.FormEvent<HTMLFormElement>) {
+  async function submitMenuItem(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setLoading(true);
-    upsertItem({
-      id: editingId ?? undefined,
-      name: form.name,
-      description: form.description,
-      price: Number(form.price),
-      category: form.category as MenuItemDTO["category"],
-      image: form.imageUrl,
-      imageUrl: form.imageUrl,
-      healthScore: Number(form.healthScore),
-      nutritionCalories: Number(form.nutritionCalories),
-      nutritionProtein: Number(form.nutritionProtein),
-      nutritionCarbs: Number(form.nutritionCarbs),
-      tags: form.tags.split(",").map((item) => item.trim()).filter(Boolean),
-      dietaryLabels: form.dietaryLabels.split(",").map((item) => item.trim()).filter(Boolean),
-      vegetarian: form.vegetarian,
-      vegan: form.vegan,
-      halal: form.halal,
-      glutenFree: form.glutenFree,
-      spicy: form.spicy,
-      available: true
-    });
-    setLoading(false);
-    setForm(emptyForm);
-    setEditingId(null);
-    pushToast({
-      title: editingId ? "Menu item updated" : "Menu item added",
-      description: "The frontend menu state has been refreshed locally.",
-      tone: "success"
-    });
+
+    try {
+      const selectedCategoryId = categoryIds[form.category];
+      if (!venueId || !selectedCategoryId) {
+        pushToast({
+          title: "Backend category missing",
+          description: "Reload dashboard once to sync venue and category mapping.",
+          tone: "warning"
+        });
+        return;
+      }
+
+      const payload = {
+        venue_id: venueId,
+        category_id: selectedCategoryId,
+        name: form.name,
+        description: form.description,
+        price: Number(form.price),
+        health_score: Number(form.healthScore),
+        calories: Number(form.nutritionCalories),
+        protein_g: Number(form.nutritionProtein),
+        carbs_g: Number(form.nutritionCarbs),
+        image_url: form.imageUrl,
+        is_available: true
+      };
+
+      const response = await fetch(
+        editingId ? `${API_BASE_URL}/admin/menu-items/${editingId}` : `${API_BASE_URL}/admin/menu-items`,
+        {
+          method: editingId ? "PATCH" : "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload)
+        }
+      );
+
+      if (!response.ok) {
+        pushToast({
+          title: "Save failed",
+          description: "Could not save this item to backend.",
+          tone: "warning"
+        });
+        return;
+      }
+
+      const savedItem = (await response.json()) as MenuItemDTO;
+      upsertItem(savedItem);
+      setForm(emptyForm);
+      setEditingId(null);
+      pushToast({
+        title: editingId ? "Menu item updated" : "Menu item added",
+        description: "The item is now saved to backend and visible on customer menu.",
+        tone: "success"
+      });
+    } catch {
+      pushToast({
+        title: "Save error",
+        description: "Could not connect to backend API.",
+        tone: "warning"
+      });
+    } finally {
+      setLoading(false);
+    }
   }
 
   function handleLogout() {
@@ -107,6 +192,45 @@ export function DashboardClient() {
       tone: "info"
     });
     router.push("/admin/login");
+  }
+
+  async function uploadImage(file: File) {
+    setImageUploading(true);
+
+    try {
+      const body = new FormData();
+      body.append("image", file);
+
+      const response = await fetch(`${API_BASE_URL}/admin/uploads/menu-image`, {
+        method: "POST",
+        body
+      });
+
+      if (!response.ok) {
+        pushToast({
+          title: "Image upload failed",
+          description: "Please try again with a valid image file.",
+          tone: "warning"
+        });
+        return;
+      }
+
+      const payload = (await response.json()) as { url: string };
+      setForm((current) => ({ ...current, imageUrl: payload.url }));
+      pushToast({
+        title: "Image uploaded",
+        description: "The image is stored locally and ready for this menu item.",
+        tone: "success"
+      });
+    } catch {
+      pushToast({
+        title: "Upload error",
+        description: "Could not reach the backend upload endpoint.",
+        tone: "warning"
+      });
+    } finally {
+      setImageUploading(false);
+    }
   }
 
   function startEdit(item: MenuItemDTO) {
@@ -153,13 +277,20 @@ export function DashboardClient() {
               Manage menu publishing, live order transitions, and mock reports from one editorial control room.
             </p>
           </div>
-          <Button
-            variant="secondary"
-            className="bg-white"
-            onClick={handleLogout}
-          >
-            Logout
-          </Button>
+          <div className="flex items-center gap-2">
+            <Link href="/menu">
+              <Button variant="secondary" className="bg-white">
+                Go to Menu
+              </Button>
+            </Link>
+            <Button
+              variant="secondary"
+              className="bg-white"
+              onClick={handleLogout}
+            >
+              Logout
+            </Button>
+          </div>
         </div>
       </Card>
 
@@ -209,12 +340,28 @@ export function DashboardClient() {
               onChange={(event) => setForm((current) => ({ ...current, name: event.target.value }))}
               required
             />
-            <Input
-              placeholder="Image URL"
-              value={form.imageUrl}
-              onChange={(event) => setForm((current) => ({ ...current, imageUrl: event.target.value }))}
-              required
-            />
+            <div className="space-y-2">
+              <Input
+                type="file"
+                accept="image/*"
+                onChange={(event) => {
+                  const file = event.target.files?.[0];
+                  if (file) {
+                    void uploadImage(file);
+                  }
+                }}
+                disabled={imageUploading}
+              />
+              <Input
+                placeholder="Image URL"
+                value={form.imageUrl}
+                onChange={(event) => setForm((current) => ({ ...current, imageUrl: event.target.value }))}
+                required
+              />
+              <p className="text-xs text-slate-500">
+                {imageUploading ? "Uploading image to local storage..." : "Select an image file or paste an image URL."}
+              </p>
+            </div>
             <Input
               placeholder="Price"
               value={form.price}
@@ -334,13 +481,36 @@ export function DashboardClient() {
                             ? "bg-emerald-50 text-emerald-700"
                             : "bg-slate-100 text-slate-500"
                         }`}
-                        onClick={() => {
-                          toggleAvailability(item.id);
-                          pushToast({
-                            title: `${item.name} visibility updated`,
-                            description: "Menu availability changed in local state.",
-                            tone: "info"
-                          });
+                        onClick={async () => {
+                          try {
+                            const response = await fetch(
+                              `${API_BASE_URL}/admin/menu-items/${item.id}/availability`,
+                              { method: "PATCH" }
+                            );
+
+                            if (!response.ok) {
+                              pushToast({
+                                title: "Update failed",
+                                description: "Could not update item visibility in backend.",
+                                tone: "warning"
+                              });
+                              return;
+                            }
+
+                            const updated = (await response.json()) as MenuItemDTO;
+                            upsertItem(updated);
+                            pushToast({
+                              title: `${item.name} visibility updated`,
+                              description: "Menu availability saved to backend.",
+                              tone: "info"
+                            });
+                          } catch {
+                            pushToast({
+                              title: "Update error",
+                              description: "Could not connect to backend API.",
+                              tone: "warning"
+                            });
+                          }
                         }}
                       >
                         {item.available ? "Available" : "Hidden"}
@@ -360,13 +530,34 @@ export function DashboardClient() {
                           type="button"
                           variant="danger"
                           className="px-3 py-2 text-xs"
-                          onClick={() => {
-                            deleteMenuItem(item.id);
-                            pushToast({
-                              title: `${item.name} removed`,
-                              description: "The item has been deleted from the frontend menu state.",
-                              tone: "warning"
-                            });
+                          onClick={async () => {
+                            try {
+                              const response = await fetch(`${API_BASE_URL}/admin/menu-items/${item.id}`, {
+                                method: "DELETE"
+                              });
+
+                              if (!response.ok) {
+                                pushToast({
+                                  title: "Delete failed",
+                                  description: "Could not delete this item from backend.",
+                                  tone: "warning"
+                                });
+                                return;
+                              }
+
+                              deleteMenuItem(item.id);
+                              pushToast({
+                                title: `${item.name} removed`,
+                                description: "The item has been deleted from backend.",
+                                tone: "warning"
+                              });
+                            } catch {
+                              pushToast({
+                                title: "Delete error",
+                                description: "Could not connect to backend API.",
+                                tone: "warning"
+                              });
+                            }
                           }}
                         >
                           Delete

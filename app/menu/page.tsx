@@ -8,9 +8,12 @@ import { CartDrawer } from "@/components/cart/cart-drawer";
 import { CustomerActions } from "@/components/menu/customer-actions";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { getBackendMenu } from "@/lib/api";
 
-export default function MenuPage() {
+export default async function MenuPage() {
   const restaurantName = getRestaurantName();
+  const backendMenu = await getBackendMenu();
+  const menuItems = backendMenu.items.length ? backendMenu.items : sampleMenuItems;
 
   return (
     <main className="min-h-screen overflow-hidden px-4 py-5 sm:px-6 lg:px-8">
@@ -83,7 +86,7 @@ export default function MenuPage() {
               <div className="relative h-[320px] w-[320px] rounded-full bg-white p-4 shadow-plate sm:h-[420px] sm:w-[420px]">
                 <div className="relative h-full w-full overflow-hidden rounded-full border-[10px] border-[#d7d5df]">
                   <Image
-                    src={sampleMenuItems[0]?.imageUrl ?? "https://images.unsplash.com/photo-1621996346565-e3dbc646d9a9?auto=format&fit=crop&w=1000&q=80"}
+                    src={menuItems[0]?.imageUrl ?? "https://images.unsplash.com/photo-1621996346565-e3dbc646d9a9?auto=format&fit=crop&w=1000&q=80"}
                     alt={restaurantName}
                     fill
                     className="object-cover"
@@ -127,7 +130,7 @@ export default function MenuPage() {
             <div className="relative mx-auto flex max-w-[440px] justify-center">
               <div className="relative h-[360px] w-[360px] overflow-hidden rounded-full border-[12px] border-white shadow-plate">
                 <Image
-                  src={sampleMenuItems[1]?.imageUrl ?? sampleMenuItems[0]?.imageUrl}
+                  src={menuItems[1]?.imageUrl ?? menuItems[0]?.imageUrl}
                   alt="Balanced meal"
                   fill
                   className="object-cover"
@@ -201,7 +204,7 @@ export default function MenuPage() {
               experience that feels close to a premium restaurant website.
             </div>
           </div>
-          <MenuGrid items={sampleMenuItems} />
+          <MenuGrid items={menuItems} />
         </section>
 
         <footer className="overflow-hidden rounded-[36px] bg-[#26263f] text-white shadow-soft">

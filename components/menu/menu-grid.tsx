@@ -14,12 +14,17 @@ const categoryMeta: Record<MenuCategory, { marker: string; copy: string }> = {
   Desserts: { marker: "DS", copy: "Sweet finishes for the perfect table." }
 };
 
+const INITIAL_VISIBLE_COUNT = 3;
+type ActiveCategory = MenuCategory | "All";
+
 export function MenuGrid({ items }: { items: MenuItemDTO[] }) {
   const storedItems = useMenuStore((state) => state.items);
+  const setMenuItems = useMenuStore((state) => state.setItems);
   const resetMenu = useMenuStore((state) => state.resetMenu);
   const [hydrated, setHydrated] = useState(false);
-  const [activeCategory, setActiveCategory] = useState<MenuCategory>("Food");
+  const [activeCategory, setActiveCategory] = useState<ActiveCategory>("All");
   const [activeFilters, setActiveFilters] = useState<DietaryFilter[]>([]);
+  const [visibleCount, setVisibleCount] = useState(INITIAL_VISIBLE_COUNT);
 
   useEffect(() => {
     setHydrated(true);
@@ -28,6 +33,17 @@ export function MenuGrid({ items }: { items: MenuItemDTO[] }) {
   useEffect(() => {
     if (!hydrated) return;
 
+    if (items.length) {
+      const incomingSignature = items.map((item) => `${item.id}:${item.imageUrl}`).join("|");
+      const storedSignature = storedItems.map((item) => `${item.id}:${item.imageUrl}`).join("|");
+
+      if (incomingSignature !== storedSignature) {
+        setMenuItems(items);
+      }
+
+      return;
+    }
+
     const hasAllCategories = categories.every((category) =>
       storedItems.some((item) => item.category === category)
     );
@@ -35,13 +51,13 @@ export function MenuGrid({ items }: { items: MenuItemDTO[] }) {
     if (!storedItems.length || !hasAllCategories) {
       resetMenu();
     }
-  }, [hydrated, resetMenu, storedItems]);
+  }, [hydrated, items, resetMenu, setMenuItems, storedItems]);
 
   const sourceItems = hydrated ? storedItems : items;
 
   const filteredItems = useMemo(() => {
     return sourceItems.filter((item) => {
-      if (item.category !== activeCategory) return false;
+      if (activeCategory !== "All" && item.category !== activeCategory) return false;
 
       return activeFilters.every((filter) => {
         if (filter === "Vegetarian") return item.vegetarian;
@@ -54,24 +70,36 @@ export function MenuGrid({ items }: { items: MenuItemDTO[] }) {
     });
   }, [activeCategory, activeFilters, sourceItems]);
 
+  useEffect(() => {
+    setVisibleCount(INITIAL_VISIBLE_COUNT);
+  }, [activeCategory, activeFilters, sourceItems]);
+
+  const visibleItems = filteredItems.slice(0, visibleCount);
+  const hasMoreItems = visibleCount < filteredItems.length;
+
   return (
     <div className="space-y-8">
       <div className="grid gap-4 lg:grid-cols-[0.82fr_1.18fr]">
         <div className="rounded-[32px] bg-white p-6 shadow-soft">
           <div className="flex items-center gap-4">
             <div className="flex h-16 w-16 items-center justify-center rounded-full bg-[#fff2e6] text-lg font-extrabold text-[#ff7a1a]">
-              {categoryMeta[activeCategory].marker}
+              {activeCategory === "All" ? "ALL" : categoryMeta[activeCategory].marker}
             </div>
             <div>
               <p className="text-sm font-bold uppercase tracking-[0.2em] text-[#ff7a1a]">Category Focus</p>
               <h3 className="font-display text-3xl font-bold text-[#23233f]">{activeCategory}</h3>
             </div>
           </div>
-          <p className="mt-4 text-sm leading-7 text-slate-500">{categoryMeta[activeCategory].copy}</p>
+          <p className="mt-4 text-sm leading-7 text-slate-500">
+            {activeCategory === "All"
+              ? "Browse everything from every category in one view."
+              : categoryMeta[activeCategory].copy}
+          </p>
         </div>
 
-        <div className="grid gap-3 sm:grid-cols-3">
-          {categories.map((category) => (
+        <div className="space-y-3">
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+            {(["All", ...categories] as ActiveCategory[]).map((category) => (
             <button
               type="button"
               key={category}
@@ -85,17 +113,32 @@ export function MenuGrid({ items }: { items: MenuItemDTO[] }) {
             >
               <div className="flex items-center gap-3">
                 <div className="flex h-12 w-12 items-center justify-center rounded-full bg-white/90 text-sm font-extrabold text-[#ff7a1a]">
-                  {categoryMeta[category].marker}
+                  {category === "All" ? "ALL" : categoryMeta[category].marker}
                 </div>
                 <div>
                   <p className="text-base font-extrabold">{category}</p>
                   <p className={cn("text-xs", category === activeCategory ? "text-orange-50" : "text-slate-400")}>
-                    {categoryMeta[category].copy}
+                    {category === "All"
+                      ? "Show items from every category."
+                      : categoryMeta[category].copy}
                   </p>
                 </div>
               </div>
             </button>
           ))}
+          </div>
+
+          {hasMoreItems ? (
+            <div className="flex justify-center sm:justify-end">
+              <button
+                type="button"
+                onClick={() => setVisibleCount((current) => current + INITIAL_VISIBLE_COUNT)}
+                className="rounded-full bg-[#23233f] px-5 py-3 text-sm font-semibold text-white transition hover:bg-[#17172b]"
+              >
+                Show More
+              </button>
+            </div>
+          ) : null}
         </div>
       </div>
 
@@ -128,7 +171,7 @@ export function MenuGrid({ items }: { items: MenuItemDTO[] }) {
       </div>
 
       <div className="grid gap-6 md:grid-cols-2 xl:grid-cols-3">
-        {filteredItems.map((item) => (
+        {visibleItems.map((item) => (
           <MenuCard key={item.id} item={item} />
         ))}
       </div>

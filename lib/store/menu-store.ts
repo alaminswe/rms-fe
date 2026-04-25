@@ -9,6 +9,7 @@ type UpsertMenuItemInput = Omit<MenuItemDTO, "id"> & { id?: string };
 
 type MenuStore = {
   items: MenuItemDTO[];
+  setItems: (items: MenuItemDTO[]) => void;
   upsertItem: (item: UpsertMenuItemInput) => void;
   deleteItem: (id: string) => void;
   toggleAvailability: (id: string) => void;
@@ -31,6 +32,7 @@ export const useMenuStore = create<MenuStore>()(
   persist(
     (set) => ({
       items: sampleMenuItems,
+      setItems: (items) => set({ items }),
       upsertItem: (item) =>
         set((state) => {
           const id = item.id ?? `menu-${Date.now()}`;
